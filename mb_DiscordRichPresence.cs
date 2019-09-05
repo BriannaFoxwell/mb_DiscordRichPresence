@@ -56,7 +56,8 @@ namespace MusicBeePlugin
             DiscordRPC.RichPresence presence = new DiscordRPC.RichPresence();
 
             string bitrate = mbApiInterface.NowPlaying_GetFileProperty(FilePropertyType.Bitrate);
-       
+            string codec = this.mbApiInterface.NowPlaying_GetFileProperty(Plugin.FilePropertyType.Kind);
+
 
             /* Discord RPC doesn't like strings that are only one character long, so I
 			   add a space after each track to make sure it's over 1 character long */
@@ -89,11 +90,41 @@ namespace MusicBeePlugin
 			// Set the album art to the manipulated album string.
 			presence.largeImageKey = "albumart";
 
-			// Set the small image to the playback status.
-			if (playing) presence.smallImageKey = "playing";
-			else presence.smallImageKey = "paused";
+            // Set the small image to the playback status.
 
-            presence.smallImageText = mbApiInterface.NowPlaying_GetFileProperty(FilePropertyType.Bitrate) + "bps";
+            if (playing)
+            {
+                presence.smallImageKey = "playing";
+            }
+            if (playing)
+            {
+                presence.smallImageText = bitrate + "bps [" + codec + "]";
+            }
+            bool flag2 = !playing;
+            if (flag2)
+            {
+                presence.smallImageKey = "paused";
+            }
+            bool flag3 = !playing;
+            if (flag3)
+            {
+                presence.smallImageText = "Paused";
+            }
+
+
+
+            long now = (long)DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1)).TotalSeconds;
+            string[] durations = duration.Split(new char[]
+            {
+                ':'
+            });
+            long end = now + Convert.ToInt64(durations[0]) * 60L + Convert.ToInt64(durations[1]);
+            TimeSpan t = DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1));
+            if (playing)
+            {
+                presence.endTimestamp = end - (long)(this.mbApiInterface.Player_GetPosition() / 1000);
+            }
+
 
             DiscordRPC.UpdatePresence(ref presence);
         }
