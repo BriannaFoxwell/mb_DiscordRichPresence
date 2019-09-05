@@ -21,10 +21,10 @@ namespace MusicBeePlugin
             about.PluginInfoVersion = PluginInfoVersion;
             about.Name = "Discord Rich Presence";
             about.Description = "Sets currently playing song as Discord Rich Presence";
-            about.Author = "Harmon758 + Kuunikal";
+            about.Author = "Harmon758 + Kuunikal + BriannaFoxwell";
             about.TargetApplication = "";   // current only applies to artwork, lyrics or instant messenger name that appears in the provider drop down selector or target Instant Messenger
             about.Type = PluginType.General;
-            about.VersionMajor = 1;  // your plugin version
+            about.VersionMajor = 2;  // your plugin version
             about.VersionMinor = 0;
             about.Revision = 05; // this how you do it?
             about.MinInterfaceVersion = MinInterfaceVersion;
