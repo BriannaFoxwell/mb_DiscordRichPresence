@@ -122,7 +122,9 @@ namespace MusicBeePlugin
             TimeSpan t = DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1));
             if (playing)
             {
-                presence.endTimestamp = end - (long)(this.mbApiInterface.Player_GetPosition() / 1000);
+                long pos = (this.mbApiInterface.Player_GetPosition() / 1000);
+                presence.startTimestamp = now - pos;
+                presence.endTimestamp = end - pos;
             }
 
 
