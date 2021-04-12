@@ -51,7 +51,7 @@ namespace MusicBeePlugin
         private void HandleErrorCallback(int errorCode, string message) { }
         private void HandleDisconnectedCallback(int errorCode, string message) { }
 
-        private void UpdatePresence(string artist, string track, string album, string duration, Boolean playing)
+        private void UpdatePresence(string artist, string track, string album, Boolean playing)
         {
             DiscordRPC.RichPresence presence = new DiscordRPC.RichPresence();
 
@@ -114,17 +114,17 @@ namespace MusicBeePlugin
 
 
             long now = (long)DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1)).TotalSeconds;
-            string[] durations = duration.Split(new char[]
-            {
-                ':'
-            });
-            long end = now + Convert.ToInt64(durations[0]) * 60L + Convert.ToInt64(durations[1]);
+            long duration = this.mbApiInterface.NowPlaying_GetDuration() / 1000;
+            long end = now + duration;
             TimeSpan t = DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1));
             if (playing)
             {
                 long pos = (this.mbApiInterface.Player_GetPosition() / 1000);
                 presence.startTimestamp = now - pos;
-                presence.endTimestamp = end - pos;
+                if (duration != -1)
+                {
+                    presence.endTimestamp = end - pos;
+                }
             }
 
 
@@ -177,31 +177,46 @@ namespace MusicBeePlugin
         {
             string bitrate = mbApiInterface.NowPlaying_GetFileProperty(FilePropertyType.Bitrate);
             string artist = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.Artist);
+            string albumArtist = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.AlbumArtist);
             string trackTitle = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.TrackTitle);
 			string album = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.Album);
-            string duration = mbApiInterface.NowPlaying_GetFileProperty(FilePropertyType.Duration);
             // mbApiInterface.NowPlaying_GetDuration();
             int position = mbApiInterface.Player_GetPosition();
 			// Check if there isn't an artist for the current song. If so, replace it with "(unknown artist)".
-            if (string.IsNullOrEmpty(artist)) { artist = "(unknown artist)"; }
+            if (string.IsNullOrEmpty(artist))
+            {
+                if (!string.IsNullOrEmpty(albumArtist))
+                {
+                    artist = albumArtist;
+                }
+                else
+                {
+                    artist = "(unknown artist)";
+                }
+            }
+
+            if (artist.Length > 128)
+            {
+                if (!string.IsNullOrEmpty(albumArtist) && albumArtist.Length <= 128)
+                {
+                    artist = albumArtist;
+                }
+                else
+                {
+                    artist = artist.Substring(0, 122) + "...";
+                }
+            }
+
             // perform some action depending on the notification type
             switch (type)
             {
                 case NotificationType.PluginStartup:
                     // perform startup initialisation
                 case NotificationType.PlayStateChanged:
-                    switch (mbApiInterface.Player_GetPlayState())
-                    {
-                        case PlayState.Playing:
-                            UpdatePresence(artist, trackTitle, album, duration, true);
-                            break;
-                        case PlayState.Paused:
-                            UpdatePresence(artist, trackTitle, album, duration, false);
-                            break;
-                    }
+                    UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false);
                     break;
                 case NotificationType.TrackChanged:
-                    UpdatePresence(artist, trackTitle, album, duration, true);
+                    UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false);
                     break;
             }
         }
