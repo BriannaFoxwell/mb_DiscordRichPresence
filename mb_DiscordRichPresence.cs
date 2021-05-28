@@ -69,24 +69,6 @@ namespace MusicBeePlugin
             // Hovering over the image presents the album name
             presence.largeImageText = album;
 
-            /* Next block  is fetching the album image from Discord's 
-               server. They don't allow spaces in their file names, so 
-               we need to convert them into underscores. */
-
-            char[] albumArray = album.ToCharArray();    // Create a char array because we can't edit strings
-
-            // Search album string for spaces
-            for (int i = 0; i < album.Length; i++)
-            {
-                // If the current character is a space, turn it into an underscore
-                if (album[i] == ' ') albumArray[i] = '_';
-                // Otherwise, just continue on
-                else albumArray[i] = album[i];
-            }
-
-            // Create a string from the array, in lowercase
-            string newAlbum = new String(albumArray).ToLower();
-
             // Set the album art to the manipulated album string.
             presence.largeImageKey = "albumart";
 
