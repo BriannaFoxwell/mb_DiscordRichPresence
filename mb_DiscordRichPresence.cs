@@ -51,7 +51,7 @@ namespace MusicBeePlugin
         private void HandleErrorCallback(int errorCode, string message) { }
         private void HandleDisconnectedCallback(int errorCode, string message) { }
 
-        private void UpdatePresence(string artist, string track, string album, Boolean playing)
+        private void UpdatePresence(string artist, string track, string album, Boolean playing, int index, int totalTracks)
         {
             DiscordRPC.RichPresence presence = new DiscordRPC.RichPresence();
 
@@ -111,7 +111,8 @@ namespace MusicBeePlugin
                 presence.smallImageText = "Paused";
             }
 
-
+            presence.partySize = index;
+            presence.partyMax = totalTracks;
 
             long now = (long)DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1)).TotalSeconds;
             long duration = this.mbApiInterface.NowPlaying_GetDuration() / 1000;
@@ -180,9 +181,13 @@ namespace MusicBeePlugin
             string albumArtist = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.AlbumArtist);
             string trackTitle = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.TrackTitle);
 			string album = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.Album);
-            // mbApiInterface.NowPlaying_GetDuration();
             int position = mbApiInterface.Player_GetPosition();
-			// Check if there isn't an artist for the current song. If so, replace it with "(unknown artist)".
+
+            string[] tracks = null;
+            mbApiInterface.NowPlayingList_QueryFilesEx(null, ref tracks);
+            int index = Array.IndexOf(tracks, mbApiInterface.NowPlaying_GetFileUrl());
+
+            // Check if there isn't an artist for the current song. If so, replace it with "(unknown artist)".
             if (string.IsNullOrEmpty(artist))
             {
                 if (!string.IsNullOrEmpty(albumArtist))
@@ -213,12 +218,12 @@ namespace MusicBeePlugin
                 case NotificationType.PluginStartup:
                     // perform startup initialisation
                 case NotificationType.PlayStateChanged:
-                    UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false);
+                    UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false, index + 1, tracks.Length);
                     break;
                 case NotificationType.TrackChanged:
-                    UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false);
+                    UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false, index + 1, tracks.Length);
                     break;
             }
         }
-   }
+    }
 }
