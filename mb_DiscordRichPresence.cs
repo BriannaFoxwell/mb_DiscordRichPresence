@@ -5,7 +5,6 @@ using System.Windows.Forms;
 using System.Collections.Generic;
 
 using DiscordInterface;
-using Util;
 
 namespace MusicBeePlugin
 {
@@ -13,6 +12,7 @@ namespace MusicBeePlugin
     {
         private MusicBeeApiInterface mbApiInterface;
         private PluginInfo about = new PluginInfo();
+        private DiscordRpc.RichPresence presence = new DiscordRpc.RichPresence();
 
         public PluginInfo Initialise(IntPtr apiInterfacePtr)
         {
@@ -33,81 +33,54 @@ namespace MusicBeePlugin
             about.ConfigurationPanelHeight = 0;   // height in pixels that musicbee should reserve in a panel for config settings. When set, a handle to an empty panel will be passed to the Configure function
 
             InitialiseDiscord();
-            
+
             return about;
         }
 
         private void InitialiseDiscord()
         {
-            DiscordRPC.DiscordEventHandlers handlers = new DiscordRPC.DiscordEventHandlers();
-            handlers.readyCallback = HandleReadyCallback;
-            handlers.errorCallback = HandleErrorCallback;
-            handlers.disconnectedCallback = HandleDisconnectedCallback;
-			// Kuunikal's dev app client ID
-            DiscordRPC.Initialize("519949979176140821", ref handlers, true, null);
+            var handlers = new DiscordRpc.EventHandlers();
+
+            handlers.readyCallback += HandleReadyCallback;
+            handlers.errorCallback += HandleErrorCallback;
+            handlers.disconnectedCallback += HandleDisconnectedCallback;
+
+            DiscordRpc.Initialize("519949979176140821", ref handlers, true, null);
+
         }
 
-        private void HandleReadyCallback() { }
+        private void HandleReadyCallback(ref DiscordRpc.DiscordUser user) { }
         private void HandleErrorCallback(int errorCode, string message) { }
         private void HandleDisconnectedCallback(int errorCode, string message) { }
 
         private void UpdatePresence(string artist, string track, string album, Boolean playing, int index, int totalTracks)
         {
-            DiscordRPC.RichPresence presence = new DiscordRPC.RichPresence();
-
             string bitrate = mbApiInterface.NowPlaying_GetFileProperty(FilePropertyType.Bitrate);
-            string codec = this.mbApiInterface.NowPlaying_GetFileProperty(Plugin.FilePropertyType.Kind);
+            string codec = mbApiInterface.NowPlaying_GetFileProperty(Plugin.FilePropertyType.Kind);
 
+            // Discord RPC doesn't like strings that are only one character long
+            // NOTE(yui): unsure if this ^ was talking about the old interface or the discord client, leaving it in just in case
+            if (track.Length <= 1) track += " ";
+            if (artist.Length <= 1) artist += " ";
 
-            /* Discord RPC doesn't like strings that are only one character long, so I
-			   add a space after each track to make sure it's over 1 character long */
-            track = Utility.Utf16ToUtf8(track + " ");
-			artist = Utility.Utf16ToUtf8("by " + artist);               // Next line, shows the artist
-			// There are characters at the end of each line which Discord renders poorly 
-			// (side-effect of Utf8, I guess?) so we need touse a substring instead
-			presence.state = artist.Substring(0, artist.Length - 1);
-			presence.details = track.Substring(0, track.Length - 1) + "[" + mbApiInterface.NowPlaying_GetFileProperty(FilePropertyType.Duration) + "]";
+            presence.state = $"by {artist}";
+            presence.details = $"{track} [{mbApiInterface.NowPlaying_GetFileProperty(FilePropertyType.Duration)}]";
 
-			// Hovering over the image presents the album name
-			presence.largeImageText = album;
+            // Hovering over the image presents the album name
+            presence.largeImageText = album;
 
-			/* Next block  is fetching the album image from Discord's 
-			   server. They don't allow spaces in their file names, so 
-			   we need to convert them into underscores. */
-
-			char[] albumArray = album.ToCharArray();    // Create a char array because we can't edit strings
-
-			// Search album string for spaces
-			for (int i = 0; i < album.Length; i++)
-			{
-				// If the current character is a space, turn it into an underscore
-				if (album[i] == ' ') albumArray[i] = '_';
-				// Otherwise, just continue on
-				else albumArray[i] = album[i];
-			}
-			// Create a string from the array, in lowercase
-			string newAlbum = new String(albumArray).ToLower();
-			// Set the album art to the manipulated album string.
-			presence.largeImageKey = "albumart";
+            // Set the album art to the manipulated album string.
+            presence.largeImageKey = "albumart";
 
             // Set the small image to the playback status.
-
             if (playing)
             {
                 presence.smallImageKey = "playing";
-            }
-            if (playing)
-            {
                 presence.smallImageText = bitrate + "bps [" + codec + "]";
             }
-            bool flag2 = !playing;
-            if (flag2)
+            else
             {
                 presence.smallImageKey = "paused";
-            }
-            bool flag3 = !playing;
-            if (flag3)
-            {
                 presence.smallImageText = "Paused";
             }
 
@@ -117,7 +90,9 @@ namespace MusicBeePlugin
             long now = (long)DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1)).TotalSeconds;
             long duration = this.mbApiInterface.NowPlaying_GetDuration() / 1000;
             long end = now + duration;
+
             TimeSpan t = DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1));
+
             if (playing)
             {
                 long pos = (this.mbApiInterface.Player_GetPosition() / 1000);
@@ -127,9 +102,13 @@ namespace MusicBeePlugin
                     presence.endTimestamp = end - pos;
                 }
             }
+            else
+            {
+                presence.startTimestamp = 0;
+                presence.endTimestamp = 0;
+            }
 
-
-            DiscordRPC.UpdatePresence(ref presence);
+            DiscordRpc.UpdatePresence(presence);
         }
 
         public bool Configure(IntPtr panelHandle)
@@ -152,7 +131,7 @@ namespace MusicBeePlugin
             }
             return false;
         }
-       
+
         // called by MusicBee when the user clicks Apply or Save in the MusicBee Preferences screen.
         // its up to you to figure out whether anything has changed and needs updating
         public void SaveSettings()
@@ -164,7 +143,7 @@ namespace MusicBeePlugin
         // MusicBee is closing the plugin (plugin is being disabled by user or MusicBee is shutting down)
         public void Close(PluginCloseReason reason)
         {
-            DiscordRPC.Shutdown();
+            DiscordRpc.Shutdown();
         }
 
         // uninstall this plugin - clean up any persisted files
