@@ -5,6 +5,12 @@ using System.Windows.Forms;
 using System.Collections.Generic;
 
 using DiscordInterface;
+using System.Threading.Tasks;
+using System.Net.Http;
+using System.Web;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using System.Linq;
 
 namespace MusicBeePlugin
 {
@@ -13,6 +19,13 @@ namespace MusicBeePlugin
         private MusicBeeApiInterface mbApiInterface;
         private PluginInfo about = new PluginInfo();
         private DiscordRpc.RichPresence presence = new DiscordRpc.RichPresence();
+
+        private string APPLICATION_ID = "519949979176140821";
+        private string LASTFM_API_KEY = "cba04ed41dff8bfb9c10835ee747ba94"; // taken from MusicBee
+
+        private static HttpClient Client = new HttpClient();
+
+        private static Dictionary<string, string> albumArtCache = new Dictionary<string, string>();
 
         public PluginInfo Initialise(IntPtr apiInterfacePtr)
         {
@@ -45,7 +58,7 @@ namespace MusicBeePlugin
             handlers.errorCallback += HandleErrorCallback;
             handlers.disconnectedCallback += HandleDisconnectedCallback;
 
-            DiscordRpc.Initialize("519949979176140821", ref handlers, true, null);
+            DiscordRpc.Initialize(APPLICATION_ID, ref handlers, true, null);
 
         }
 
@@ -53,8 +66,36 @@ namespace MusicBeePlugin
         private void HandleErrorCallback(int errorCode, string message) { }
         private void HandleDisconnectedCallback(int errorCode, string message) { }
 
-        private void UpdatePresence(string artist, string track, string album, Boolean playing, int index, int totalTracks)
+        private async Task UpdatePresence(string artist, string track, string album, Boolean playing, int index, int totalTracks)
         {
+            presence.largeImageKey = "albumart";
+            presence.largeImageText = album;
+
+            if (!albumArtCache.ContainsKey($"{artist}_{album}"))
+            {
+                HttpResponseMessage lastFmInfoResp = await Client.GetAsync($"https://ws.audioscrobbler.com/2.0/?method=album.getinfo&api_key={LASTFM_API_KEY}&artist={HttpUtility.UrlEncode(artist)}&album={HttpUtility.UrlEncode(album)}&format=json");
+                if (lastFmInfoResp.IsSuccessStatusCode)
+                {
+                    string jsonString = await lastFmInfoResp.Content.ReadAsStringAsync();
+                    JObject jsonData = JsonConvert.DeserializeObject<JObject>(jsonString);
+                    var images = jsonData["album"]["image"].Children<JObject>();
+                    string albumArtUrl = (string)((JObject)images.Where(x => (string)x["size"] == "large").FirstOrDefault())["#text"];
+                    albumArtCache.Add($"{artist}_{album}", albumArtUrl);
+
+                } else
+                {
+                    albumArtCache.Add($"{artist}_{album}", "unknown");
+                }
+            }
+
+
+            string url = albumArtCache[$"{artist}_{album}"];
+            if (url != "" && url != "unknown")
+            {
+                // took some random external string so who knows how long itll last
+                presence.largeImageKey = url;
+            }
+
             string bitrate = mbApiInterface.NowPlaying_GetFileProperty(FilePropertyType.Bitrate);
             string codec = mbApiInterface.NowPlaying_GetFileProperty(Plugin.FilePropertyType.Kind);
 
@@ -66,17 +107,11 @@ namespace MusicBeePlugin
             presence.state = $"by {artist}";
             presence.details = $"{track} [{mbApiInterface.NowPlaying_GetFileProperty(FilePropertyType.Duration)}]";
 
-            // Hovering over the image presents the album name
-            presence.largeImageText = album;
-
-            // Set the album art to the manipulated album string.
-            presence.largeImageKey = "albumart";
-
             // Set the small image to the playback status.
             if (playing)
             {
                 presence.smallImageKey = "playing";
-                presence.smallImageText = bitrate + "bps [" + codec + "]";
+                presence.smallImageText = $"{bitrate.Replace("k", "kbps")} [{codec}]";
             }
             else
             {
@@ -197,10 +232,10 @@ namespace MusicBeePlugin
                 case NotificationType.PluginStartup:
                     // perform startup initialisation
                 case NotificationType.PlayStateChanged:
-                    UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false, index + 1, tracks.Length);
+                    _ = UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false, index + 1, tracks.Length);
                     break;
                 case NotificationType.TrackChanged:
-                    UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false, index + 1, tracks.Length);
+                    _ = UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false, index + 1, tracks.Length);
                     break;
             }
         }
