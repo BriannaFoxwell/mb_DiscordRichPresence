@@ -66,34 +66,101 @@ namespace MusicBeePlugin
         private void HandleErrorCallback(int errorCode, string message) { }
         private void HandleDisconnectedCallback(int errorCode, string message) { }
 
-        private async Task UpdatePresence(string artist, string track, string album, Boolean playing, int index, int totalTracks)
+        private async Task UpdatePresence(string artist, string track, string album, Boolean playing, int index, int totalTracks, string albumArtist)
         {
             presence.largeImageKey = "albumart";
             presence.largeImageText = album;
 
-            if (!albumArtCache.ContainsKey($"{artist}_{album}"))
+            // getting ratelimited from lastfm wr
+            if (artist != null && album != null && !albumArtCache.ContainsKey($"{albumArtist}_{album}"))
+            {
+                HttpResponseMessage lastFmInfoResp = await Client.GetAsync($"https://ws.audioscrobbler.com/2.0/?method=album.getinfo&api_key={LASTFM_API_KEY}&artist={HttpUtility.UrlEncode(albumArtist)}&album={HttpUtility.UrlEncode(album)}&format=json");
+                if (lastFmInfoResp.IsSuccessStatusCode)
+                {
+                    string jsonString = await lastFmInfoResp.Content.ReadAsStringAsync();
+                    JObject jsonData = JsonConvert.DeserializeObject<JObject>(jsonString);
+                    try { 
+                        var images = jsonData["album"]["image"].Children<JObject>();
+                        string albumArtUrl = (string)((JObject)images.Where(x => (string)x["size"] == "large").FirstOrDefault())["#text"];
+                        albumArtCache.Add($"{albumArtist}_{album}", albumArtUrl);
+                    } catch
+                    {
+                        albumArtCache.Add($"{artist}_{track}", "unknown");
+                    }
+                }
+                else
+                {
+                    albumArtCache.Add($"{albumArtist}_{album}", "unknown");
+                }
+            }
+
+            if (artist != null && album != null && albumArtist != null && albumArtCache.ContainsKey($"{albumArtist}_{album}") && (albumArtCache[$"{albumArtist}_{album}"] == "" || albumArtCache[$"{albumArtist}_{album}"] == "unknown") && !albumArtCache.ContainsKey($"{artist}_{album}"))
             {
                 HttpResponseMessage lastFmInfoResp = await Client.GetAsync($"https://ws.audioscrobbler.com/2.0/?method=album.getinfo&api_key={LASTFM_API_KEY}&artist={HttpUtility.UrlEncode(artist)}&album={HttpUtility.UrlEncode(album)}&format=json");
                 if (lastFmInfoResp.IsSuccessStatusCode)
                 {
                     string jsonString = await lastFmInfoResp.Content.ReadAsStringAsync();
                     JObject jsonData = JsonConvert.DeserializeObject<JObject>(jsonString);
-                    var images = jsonData["album"]["image"].Children<JObject>();
-                    string albumArtUrl = (string)((JObject)images.Where(x => (string)x["size"] == "large").FirstOrDefault())["#text"];
-                    albumArtCache.Add($"{artist}_{album}", albumArtUrl);
-
+                    try
+                    {
+                        var images = jsonData["album"]["image"].Children<JObject>();
+                        string albumArtUrl = (string)((JObject)images.Where(x => (string)x["size"] == "large").FirstOrDefault())["#text"];
+                        albumArtCache.Add($"{artist}_{album}", albumArtUrl);
+                    }
+                    catch
+                    {
+                        albumArtCache.Add($"{artist}_{track}", "unknown");
+                    }
                 } else
                 {
                     albumArtCache.Add($"{artist}_{album}", "unknown");
                 }
             }
 
+            if (artist != null && albumArtCache.ContainsKey($"{artist}_{album}") && (albumArtCache[$"{artist}_{album}"] == "" || albumArtCache[$"{artist}_{album}"] == "unknown") && !albumArtCache.ContainsKey($"{artist}_{track}"))
+            {
+                HttpResponseMessage lastFmInfoResp = await Client.GetAsync($"https://ws.audioscrobbler.com/2.0/?method=track.getinfo&api_key={LASTFM_API_KEY}&artist={HttpUtility.UrlEncode(artist)}&track={HttpUtility.UrlEncode(track)}&format=json");
+                if (lastFmInfoResp.IsSuccessStatusCode)
+                {
+                    string jsonString = await lastFmInfoResp.Content.ReadAsStringAsync();
+                    JObject jsonData = JsonConvert.DeserializeObject<JObject>(jsonString);
+                    try { 
+                        var images = jsonData["album"]["image"].Children<JObject>();
+                        string albumArtUrl = (string)((JObject)images.Where(x => (string)x["size"] == "large").FirstOrDefault())["#text"];
+                        albumArtCache.Add($"{artist}_{track}", albumArtUrl);
+                    }
+                    catch
+                    {
+                        albumArtCache.Add($"{artist}_{track}", "unknown");
+                    }
+                }
+                else
+                {
+                    albumArtCache.Add($"{artist}_{track}", "unknown");
+                }
+            }
 
-            string url = albumArtCache[$"{artist}_{album}"];
+
+            string url = albumArtCache[$"{albumArtist}_{album}"];
             if (url != "" && url != "unknown")
             {
-                // took some random external string so who knows how long itll last
                 presence.largeImageKey = url;
+            }
+            else
+            {
+                string url2 = albumArtCache[$"{artist}_{album}"];
+                if (url2 != "" && url2 != "unknown")
+                {
+                    presence.largeImageKey = url2;
+                }
+                else
+                {
+                    string url3 = albumArtCache[$"{artist}_{track}"];
+                    if (url3 != "" && url3 != "unknown")
+                    {
+                        presence.largeImageKey = url3;
+                    }
+                }
             }
 
             string bitrate = mbApiInterface.NowPlaying_GetFileProperty(FilePropertyType.Bitrate);
@@ -232,10 +299,10 @@ namespace MusicBeePlugin
                 case NotificationType.PluginStartup:
                     // perform startup initialisation
                 case NotificationType.PlayStateChanged:
-                    _ = UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false, index + 1, tracks.Length);
+                    _ = UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false, index + 1, tracks.Length, albumArtist);
                     break;
                 case NotificationType.TrackChanged:
-                    _ = UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false, index + 1, tracks.Length);
+                    _ = UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false, index + 1, tracks.Length, albumArtist);
                     break;
             }
         }
