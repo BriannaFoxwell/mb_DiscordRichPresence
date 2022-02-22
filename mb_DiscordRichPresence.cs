@@ -66,10 +66,37 @@ namespace MusicBeePlugin
         private void HandleErrorCallback(int errorCode, string message) { }
         private void HandleDisconnectedCallback(int errorCode, string message) { }
 
-        private async Task UpdatePresence(string artist, string track, string album, Boolean playing, int index, int totalTracks, string albumArtist)
+        private async Task UpdatePresence(string artist, string track, string album, Boolean playing, int index, int totalTracks, string albumArtist, string yearStr)
         {
             presence.largeImageKey = "albumart";
-            presence.largeImageText = album;
+
+            // NOTE(yui): this is very ugly
+            string year = null;
+
+            if (yearStr.Length > 0)
+            {
+                try
+                {
+                    year = DateTime.Parse(yearStr).Year.ToString();
+                }
+                catch (FormatException)
+                {
+                    if (yearStr.Length == 4)
+                    {
+                        year = DateTime.ParseExact(yearStr, "yyyy", null).Year.ToString();
+                    }
+                }
+            }
+
+            if (year != null)
+            {
+                presence.largeImageText = $"{album} ({year})";
+            }
+            else
+            {
+                presence.largeImageText = album;
+            }
+
 
             // getting ratelimited from lastfm wr
             if (artist != null && album != null && !albumArtCache.ContainsKey($"{albumArtist}_{album}"))
@@ -261,7 +288,8 @@ namespace MusicBeePlugin
             string artist = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.Artist);
             string albumArtist = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.AlbumArtist);
             string trackTitle = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.TrackTitle);
-			string album = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.Album);
+            string album = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.Album);
+            string year = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.Year);
             int position = mbApiInterface.Player_GetPosition();
 
             string[] tracks = null;
@@ -299,10 +327,20 @@ namespace MusicBeePlugin
                 case NotificationType.PluginStartup:
                     // perform startup initialisation
                 case NotificationType.PlayStateChanged:
-                    _ = UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false, index + 1, tracks.Length, albumArtist);
-                    break;
                 case NotificationType.TrackChanged:
-                    _ = UpdatePresence(artist, trackTitle, album, mbApiInterface.Player_GetPlayState() == PlayState.Playing ? true : false, index + 1, tracks.Length, albumArtist);
+                    var isPlaying = mbApiInterface.Player_GetPlayState() == PlayState.Playing;
+
+                    Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await UpdatePresence(artist, trackTitle, album, isPlaying, index + 1, tracks.Length, albumArtist, year);
+                        }
+                        catch (Exception err)
+                        {
+                            Console.WriteLine(err);
+                        }
+                    });
                     break;
             }
         }
