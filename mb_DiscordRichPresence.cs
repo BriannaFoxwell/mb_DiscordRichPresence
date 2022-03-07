@@ -11,6 +11,9 @@ using System.Web;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Linq;
+using System.Runtime.Serialization;
+using System.IO;
+using System.Diagnostics;
 
 namespace MusicBeePlugin
 {
@@ -21,11 +24,15 @@ namespace MusicBeePlugin
         private DiscordRpc.RichPresence presence = new DiscordRpc.RichPresence();
 
         private string APPLICATION_ID = "519949979176140821";
-        private string LASTFM_API_KEY = "cba04ed41dff8bfb9c10835ee747ba94"; // taken from MusicBee
+        //private string LASTFM_API_KEY = "cba04ed41dff8bfb9c10835ee747ba94"; // taken from MusicBee
+        private string LASTFM_BASE_URL = "https://ws.audioscrobbler.com/2.0/?method=album.getinfo&api_key=cba04ed41dff8bfb9c10835ee747ba94&format=json";
 
         private static HttpClient Client = new HttpClient();
 
         private static Dictionary<string, string> albumArtCache = new Dictionary<string, string>();
+
+        public Plugin.Configuration config = new Plugin.Configuration();
+        public Plugin.Configuration newConfig = new Plugin.Configuration();
 
         public PluginInfo Initialise(IntPtr apiInterfacePtr)
         {
@@ -43,7 +50,7 @@ namespace MusicBeePlugin
             about.MinInterfaceVersion = MinInterfaceVersion;
             about.MinApiRevision = MinApiRevision;
             about.ReceiveNotifications = (ReceiveNotificationFlags.PlayerEvents | ReceiveNotificationFlags.TagEvents);
-            about.ConfigurationPanelHeight = 0;   // height in pixels that musicbee should reserve in a panel for config settings. When set, a handle to an empty panel will be passed to the Configure function
+            about.ConfigurationPanelHeight = 24;   // height in pixels that musicbee should reserve in a panel for config settings. When set, a handle to an empty panel will be passed to the Configure function
 
             InitialiseDiscord();
 
@@ -66,7 +73,58 @@ namespace MusicBeePlugin
         private void HandleErrorCallback(int errorCode, string message) { }
         private void HandleDisconnectedCallback(int errorCode, string message) { }
 
-        private async Task UpdatePresence(string artist, string track, string album, Boolean playing, int index, int totalTracks, string albumArtist, string yearStr)
+        private async Task FetchArt(string track, string artist, string albumArtist, string album)
+        {
+            string url = LASTFM_BASE_URL;
+            bool fetch = false;
+            string key = "";
+
+            if (albumArtist != null && album != null && !albumArtCache.ContainsKey($"{albumArtist}_{album}"))
+            {
+                fetch = true;
+                url += $"&artist={HttpUtility.UrlEncode(albumArtist)}&album={HttpUtility.UrlEncode(album)}";
+                key = $"{albumArtist}_{album}";
+            }
+
+            if (artist != null && album != null && albumArtist != null && albumArtCache.ContainsKey($"{albumArtist}_{album}") && (albumArtCache[$"{albumArtist}_{album}"] == "" || albumArtCache[$"{albumArtist}_{album}"] == "unknown") && !albumArtCache.ContainsKey($"{artist}_{album}"))
+            {
+                fetch = true;
+                url += $"&artist={HttpUtility.UrlEncode(artist)}&album={HttpUtility.UrlEncode(album)}";
+                key = $"{artist}_{album}";
+            }
+
+            if (artist != null && album != null && albumArtCache.ContainsKey($"{artist}_{album}") && (albumArtCache[$"{artist}_{album}"] == "" || albumArtCache[$"{artist}_{album}"] == "unknown") && !albumArtCache.ContainsKey($"{artist}_{track}")) {
+                fetch = true;
+                url += $"&artist={HttpUtility.UrlEncode(artist)}&track={HttpUtility.UrlEncode(track)}";
+                key = $"{artist}_{track}";
+            }
+
+            if (fetch)
+            {
+                HttpResponseMessage lastFmInfoResp = await Client.GetAsync(url);
+                if (lastFmInfoResp.IsSuccessStatusCode)
+                {
+                    string jsonString = await lastFmInfoResp.Content.ReadAsStringAsync();
+                    JObject jsonData = JsonConvert.DeserializeObject<JObject>(jsonString);
+                    try
+                    {
+                        var images = jsonData["album"]["image"].Children<JObject>();
+                        string albumArtUrl = (string)((JObject)images.Where(x => (string)x["size"] == "large").FirstOrDefault())["#text"];
+                        albumArtCache.Add(key, albumArtUrl);
+                    }
+                    catch
+                    {
+                        albumArtCache.Add(key, "unknown");
+                    }
+                }
+                else
+                {
+                    albumArtCache.Add(key, "unknown");
+                }
+            }
+        }
+
+        private async Task UpdatePresence(string artist, string track, string album, bool playing, int index, int totalTracks, string albumArtist, string yearStr)
         {
             presence.largeImageKey = "albumart";
 
@@ -88,7 +146,7 @@ namespace MusicBeePlugin
                 }
             }
 
-            if (year != null)
+            if (year != null && config.showYear)
             {
                 presence.largeImageText = $"{album} ({year})";
             }
@@ -97,76 +155,7 @@ namespace MusicBeePlugin
                 presence.largeImageText = album;
             }
 
-
-            // getting ratelimited from lastfm wr
-            if (artist != null && album != null && !albumArtCache.ContainsKey($"{albumArtist}_{album}"))
-            {
-                HttpResponseMessage lastFmInfoResp = await Client.GetAsync($"https://ws.audioscrobbler.com/2.0/?method=album.getinfo&api_key={LASTFM_API_KEY}&artist={HttpUtility.UrlEncode(albumArtist)}&album={HttpUtility.UrlEncode(album)}&format=json");
-                if (lastFmInfoResp.IsSuccessStatusCode)
-                {
-                    string jsonString = await lastFmInfoResp.Content.ReadAsStringAsync();
-                    JObject jsonData = JsonConvert.DeserializeObject<JObject>(jsonString);
-                    try { 
-                        var images = jsonData["album"]["image"].Children<JObject>();
-                        string albumArtUrl = (string)((JObject)images.Where(x => (string)x["size"] == "large").FirstOrDefault())["#text"];
-                        albumArtCache.Add($"{albumArtist}_{album}", albumArtUrl);
-                    } catch
-                    {
-                        albumArtCache.Add($"{artist}_{track}", "unknown");
-                    }
-                }
-                else
-                {
-                    albumArtCache.Add($"{albumArtist}_{album}", "unknown");
-                }
-            }
-
-            if (artist != null && album != null && albumArtist != null && albumArtCache.ContainsKey($"{albumArtist}_{album}") && (albumArtCache[$"{albumArtist}_{album}"] == "" || albumArtCache[$"{albumArtist}_{album}"] == "unknown") && !albumArtCache.ContainsKey($"{artist}_{album}"))
-            {
-                HttpResponseMessage lastFmInfoResp = await Client.GetAsync($"https://ws.audioscrobbler.com/2.0/?method=album.getinfo&api_key={LASTFM_API_KEY}&artist={HttpUtility.UrlEncode(artist)}&album={HttpUtility.UrlEncode(album)}&format=json");
-                if (lastFmInfoResp.IsSuccessStatusCode)
-                {
-                    string jsonString = await lastFmInfoResp.Content.ReadAsStringAsync();
-                    JObject jsonData = JsonConvert.DeserializeObject<JObject>(jsonString);
-                    try
-                    {
-                        var images = jsonData["album"]["image"].Children<JObject>();
-                        string albumArtUrl = (string)((JObject)images.Where(x => (string)x["size"] == "large").FirstOrDefault())["#text"];
-                        albumArtCache.Add($"{artist}_{album}", albumArtUrl);
-                    }
-                    catch
-                    {
-                        albumArtCache.Add($"{artist}_{track}", "unknown");
-                    }
-                } else
-                {
-                    albumArtCache.Add($"{artist}_{album}", "unknown");
-                }
-            }
-
-            if (artist != null && albumArtCache.ContainsKey($"{artist}_{album}") && (albumArtCache[$"{artist}_{album}"] == "" || albumArtCache[$"{artist}_{album}"] == "unknown") && !albumArtCache.ContainsKey($"{artist}_{track}"))
-            {
-                HttpResponseMessage lastFmInfoResp = await Client.GetAsync($"https://ws.audioscrobbler.com/2.0/?method=track.getinfo&api_key={LASTFM_API_KEY}&artist={HttpUtility.UrlEncode(artist)}&track={HttpUtility.UrlEncode(track)}&format=json");
-                if (lastFmInfoResp.IsSuccessStatusCode)
-                {
-                    string jsonString = await lastFmInfoResp.Content.ReadAsStringAsync();
-                    JObject jsonData = JsonConvert.DeserializeObject<JObject>(jsonString);
-                    try { 
-                        var images = jsonData["album"]["image"].Children<JObject>();
-                        string albumArtUrl = (string)((JObject)images.Where(x => (string)x["size"] == "large").FirstOrDefault())["#text"];
-                        albumArtCache.Add($"{artist}_{track}", albumArtUrl);
-                    }
-                    catch
-                    {
-                        albumArtCache.Add($"{artist}_{track}", "unknown");
-                    }
-                }
-                else
-                {
-                    albumArtCache.Add($"{artist}_{track}", "unknown");
-                }
-            }
-
+            await FetchArt(track, artist, albumArtist, album);
 
             string url = albumArtCache[$"{albumArtist}_{album}"];
             if (url != "" && url != "unknown")
@@ -249,16 +238,25 @@ namespace MusicBeePlugin
             // if about.ConfigurationPanelHeight is set to 0, you can display your own popup window
             if (panelHandle != IntPtr.Zero)
             {
-                Panel configPanel = (Panel)Panel.FromHandle(panelHandle);
-                Label prompt = new Label();
-                prompt.AutoSize = true;
-                prompt.Location = new Point(0, 0);
-                prompt.Text = "prompt:";
-                TextBox textBox = new TextBox();
-                textBox.Bounds = new Rectangle(60, 0, 100, textBox.Height);
-                configPanel.Controls.AddRange(new Control[] { prompt, textBox });
+                newConfig = (Configuration) config.Clone();
+
+                Panel configPanel = (Panel) Panel.FromHandle(panelHandle);
+
+                CheckBox showYear = new CheckBox();
+                showYear.Name = "ShowYear";
+                showYear.Text = "Show year next to album";
+                showYear.Height = 16;
+                showYear.ForeColor = Color.FromArgb(mbApiInterface.Setting_GetSkinElementColour(SkinElement.SkinInputPanelLabel, ElementState.ElementStateDefault, ElementComponent.ComponentForeground));
+                showYear.Checked = newConfig.showYear;
+                showYear.CheckedChanged += ShowYearValueChanged;
+
+                configPanel.Controls.AddRange(new Control[] { showYear });
             }
             return false;
+        }
+
+        private void ShowYearValueChanged(object sender, EventArgs args) {
+            newConfig.showYear = (sender as CheckBox).Checked;
         }
 
         // called by MusicBee when the user clicks Apply or Save in the MusicBee Preferences screen.
@@ -267,6 +265,24 @@ namespace MusicBeePlugin
         {
             // save any persistent settings in a sub-folder of this path
             string dataPath = mbApiInterface.Setting_GetPersistentStoragePath();
+            config = newConfig;
+            SaveConfig(dataPath);
+        }
+
+        private void SaveConfig(string dataPath)
+        {
+            DataContractSerializer dataContractSerializer = new DataContractSerializer(typeof(Plugin.Configuration));
+            FileStream fileStream = new FileStream(Path.Combine(dataPath, "mb_DiscordRichPresence.xml"), FileMode.Create);
+            dataContractSerializer.WriteObject(fileStream, config);
+            fileStream.Close();
+        }
+
+        private void LoadConfig(string dataPath)
+        {
+            DataContractSerializer dataContractSerializer = new DataContractSerializer(typeof(Plugin.Configuration));
+            FileStream fileStream = new FileStream(Path.Combine(dataPath, "mb_DiscordRichPresence.xml"), FileMode.Open);
+            config = (Plugin.Configuration) dataContractSerializer.ReadObject(fileStream);
+            fileStream.Close();
         }
 
         // MusicBee is closing the plugin (plugin is being disabled by user or MusicBee is shutting down)
@@ -321,27 +337,47 @@ namespace MusicBeePlugin
                 }
             }
 
+            if (type == NotificationType.PluginStartup)
+                LoadConfig(mbApiInterface.Setting_GetPersistentStoragePath());
+
             // perform some action depending on the notification type
             switch (type)
             {
                 case NotificationType.PluginStartup:
-                    // perform startup initialisation
                 case NotificationType.PlayStateChanged:
                 case NotificationType.TrackChanged:
-                    var isPlaying = mbApiInterface.Player_GetPlayState() == PlayState.Playing;
+                    PlayState state = mbApiInterface.Player_GetPlayState();
+                    bool isPlaying = state == PlayState.Playing;
 
-                    Task.Run(async () =>
-                    {
-                        try
+                    // reduce wasting rich presence broadcasting ratelimits from loading state when switching tracks/skipping
+                    if (state != PlayState.Loading && state != PlayState.Undefined && state != PlayState.Stopped)
+                        Task.Run(async () =>
                         {
-                            await UpdatePresence(artist, trackTitle, album, isPlaying, index + 1, tracks.Length, albumArtist, year);
-                        }
-                        catch (Exception err)
-                        {
-                            Console.WriteLine(err);
-                        }
-                    });
+                            try
+                            {
+                                await UpdatePresence(artist, trackTitle, album, isPlaying, index + 1, tracks.Length, albumArtist, year);
+                            }
+                            catch (Exception err)
+                            {
+                                Console.WriteLine(err);
+                            }
+                        });
                     break;
+            }
+        }
+
+        public class Configuration : ICloneable
+        {
+            public Configuration()
+            {
+                this.showYear = true;
+            }
+
+            public bool showYear { get; set; }
+
+            public object Clone()
+            {
+                return base.MemberwiseClone();
             }
         }
     }
