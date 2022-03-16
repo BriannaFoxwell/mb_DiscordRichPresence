@@ -73,58 +73,57 @@ namespace MusicBeePlugin
         private void HandleErrorCallback(int errorCode, string message) { }
         private void HandleDisconnectedCallback(int errorCode, string message) { }
 
-        private async Task FetchArt(string track, string artist, string albumArtist, string album)
+        private async Task FetchArtRequest(string key, string url)
         {
-            string url = LASTFM_BASE_URL;
-            bool fetch = false;
-            string key = "";
-
-            if (albumArtist != null && album != null && !albumArtCache.ContainsKey($"{albumArtist}_{album}"))
+            HttpResponseMessage lastFmInfoResp = await Client.GetAsync(url);
+            if (lastFmInfoResp.IsSuccessStatusCode)
             {
-                fetch = true;
-                url += $"&artist={HttpUtility.UrlEncode(albumArtist)}&album={HttpUtility.UrlEncode(album)}";
-                key = $"{albumArtist}_{album}";
-            }
-
-            if (artist != null && album != null && albumArtist != null && albumArtCache.ContainsKey($"{albumArtist}_{album}") && (albumArtCache[$"{albumArtist}_{album}"] == "" || albumArtCache[$"{albumArtist}_{album}"] == "unknown") && !albumArtCache.ContainsKey($"{artist}_{album}"))
-            {
-                fetch = true;
-                url += $"&artist={HttpUtility.UrlEncode(artist)}&album={HttpUtility.UrlEncode(album)}";
-                key = $"{artist}_{album}";
-            }
-
-            if (artist != null && album != null && albumArtCache.ContainsKey($"{artist}_{album}") && (albumArtCache[$"{artist}_{album}"] == "" || albumArtCache[$"{artist}_{album}"] == "unknown") && !albumArtCache.ContainsKey($"{artist}_{track}")) {
-                fetch = true;
-                url += $"&artist={HttpUtility.UrlEncode(artist)}&track={HttpUtility.UrlEncode(track)}";
-                key = $"{artist}_{track}";
-            }
-
-            if (fetch)
-            {
-                HttpResponseMessage lastFmInfoResp = await Client.GetAsync(url);
-                if (lastFmInfoResp.IsSuccessStatusCode)
+                string jsonString = await lastFmInfoResp.Content.ReadAsStringAsync();
+                JObject jsonData = JsonConvert.DeserializeObject<JObject>(jsonString);
+                try
                 {
-                    string jsonString = await lastFmInfoResp.Content.ReadAsStringAsync();
-                    JObject jsonData = JsonConvert.DeserializeObject<JObject>(jsonString);
-                    try
-                    {
-                        var images = jsonData["album"]["image"].Children<JObject>();
-                        string albumArtUrl = (string)((JObject)images.Where(x => (string)x["size"] == "large").FirstOrDefault())["#text"];
-                        albumArtCache.Add(key, albumArtUrl);
-                    }
-                    catch
-                    {
-                        albumArtCache.Add(key, "unknown");
-                    }
+                    var images = jsonData["album"]["image"].Children<JObject>();
+                    string albumArtUrl = (string)((JObject)images.Where(x => (string)x["size"] == "large").FirstOrDefault())["#text"];
+                    albumArtCache.Add(key, albumArtUrl);
                 }
-                else
+                catch
                 {
                     albumArtCache.Add(key, "unknown");
                 }
             }
+            else
+            {
+                albumArtCache.Add(key, "unknown");
+            }
         }
 
-        private async Task UpdatePresence(string artist, string track, string album, bool playing, int index, int totalTracks, string albumArtist, string yearStr)
+        private async Task FetchArt(string track, string artist, string albumArtist, string album)
+        {
+            string url = LASTFM_BASE_URL;
+            string key = "";
+
+            if (albumArtist != null && album != null && !albumArtCache.ContainsKey($"{albumArtist}_{album}"))
+            {
+                url += $"&artist={HttpUtility.UrlEncode(albumArtist)}&album={HttpUtility.UrlEncode(album)}";
+                key = $"{albumArtist}_{album}";
+                await FetchArtRequest(key, url);
+            }
+
+            if (artist != null && album != null && albumArtist != null && albumArtCache.ContainsKey($"{albumArtist}_{album}") && (albumArtCache[$"{albumArtist}_{album}"] == "" || albumArtCache[$"{albumArtist}_{album}"] == "unknown") && !albumArtCache.ContainsKey($"{artist}_{album}"))
+            {
+                url += $"&artist={HttpUtility.UrlEncode(artist)}&album={HttpUtility.UrlEncode(album)}";
+                key = $"{artist}_{album}";
+                await FetchArtRequest(key, url);
+            }
+
+            if (artist != null && album != null && albumArtCache.ContainsKey($"{artist}_{album}") && (albumArtCache[$"{artist}_{album}"] == "" || albumArtCache[$"{artist}_{album}"] == "unknown") && !albumArtCache.ContainsKey($"{artist}_{track}")) {
+                url += $"&artist={HttpUtility.UrlEncode(artist)}&track={HttpUtility.UrlEncode(track)}";
+                key = $"{artist}_{track}";
+                await FetchArtRequest(key, url);
+            }
+        }
+
+        private async Task UpdatePresence(string artist, string track, string album, bool playing, int index, int totalTracks, string imageUrl, string yearStr)
         {
             presence.largeImageKey = "albumart";
 
@@ -155,29 +154,8 @@ namespace MusicBeePlugin
                 presence.largeImageText = album;
             }
 
-            await FetchArt(track, artist, albumArtist, album);
-
-            string url = albumArtCache[$"{albumArtist}_{album}"];
-            if (url != "" && url != "unknown")
-            {
-                presence.largeImageKey = url;
-            }
-            else
-            {
-                string url2 = albumArtCache[$"{artist}_{album}"];
-                if (url2 != "" && url2 != "unknown")
-                {
-                    presence.largeImageKey = url2;
-                }
-                else
-                {
-                    string url3 = albumArtCache[$"{artist}_{track}"];
-                    if (url3 != "" && url3 != "unknown")
-                    {
-                        presence.largeImageKey = url3;
-                    }
-                }
-            }
+            if (imageUrl != "" && imageUrl != "unknown")
+                presence.largeImageKey = imageUrl;
 
             string bitrate = mbApiInterface.NowPlaying_GetFileProperty(FilePropertyType.Bitrate);
             string codec = mbApiInterface.NowPlaying_GetFileProperty(Plugin.FilePropertyType.Kind);
@@ -308,6 +286,8 @@ namespace MusicBeePlugin
             string year = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.Year);
             int position = mbApiInterface.Player_GetPosition();
 
+            string originalArtist = artist;
+
             string[] tracks = null;
             mbApiInterface.NowPlayingList_QueryFilesEx(null, ref tracks);
             int index = Array.IndexOf(tracks, mbApiInterface.NowPlaying_GetFileUrl());
@@ -346,22 +326,28 @@ namespace MusicBeePlugin
                 case NotificationType.PluginStartup:
                 case NotificationType.PlayStateChanged:
                 case NotificationType.TrackChanged:
-                    PlayState state = mbApiInterface.Player_GetPlayState();
-                    bool isPlaying = state == PlayState.Playing;
+                    bool isPlaying = mbApiInterface.Player_GetPlayState() == PlayState.Playing;
 
-                    // reduce wasting rich presence broadcasting ratelimits from loading state when switching tracks/skipping
-                    if (state != PlayState.Loading && state != PlayState.Undefined && state != PlayState.Stopped)
-                        Task.Run(async () =>
+                    Task.Run(async () =>
+                    {
+                        try
                         {
-                            try
-                            {
-                                await UpdatePresence(artist, trackTitle, album, isPlaying, index + 1, tracks.Length, albumArtist, year);
+                            await FetchArt(trackTitle, originalArtist, albumArtist, album);
+
+                            string imageUrl = albumArtCache[$"{albumArtist}_{album}"];
+                            if (imageUrl == "" && imageUrl == "unknown") {
+                                imageUrl = albumArtCache[$"{originalArtist}_{album}"];
+                                if (imageUrl == "" && imageUrl == "unknown")
+                                    imageUrl = albumArtCache[$"{originalArtist}_{trackTitle}"];
                             }
-                            catch (Exception err)
-                            {
-                                Console.WriteLine(err);
-                            }
-                        });
+
+                            await UpdatePresence(artist, trackTitle, album, isPlaying, index + 1, tracks.Length, imageUrl, year);
+                        }
+                        catch (Exception err)
+                        {
+                            Console.WriteLine(err);
+                        }
+                    });
                     break;
             }
         }
