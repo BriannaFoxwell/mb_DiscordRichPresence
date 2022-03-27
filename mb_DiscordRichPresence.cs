@@ -50,7 +50,7 @@ namespace MusicBeePlugin
             about.MinInterfaceVersion = MinInterfaceVersion;
             about.MinApiRevision = MinApiRevision;
             about.ReceiveNotifications = (ReceiveNotificationFlags.PlayerEvents | ReceiveNotificationFlags.TagEvents);
-            about.ConfigurationPanelHeight = 24;   // height in pixels that musicbee should reserve in a panel for config settings. When set, a handle to an empty panel will be passed to the Configure function
+            about.ConfigurationPanelHeight = 48;   // height in pixels that musicbee should reserve in a panel for config settings. When set, a handle to an empty panel will be passed to the Configure function
 
             InitialiseDiscord();
 
@@ -123,7 +123,7 @@ namespace MusicBeePlugin
             }
         }
 
-        private async Task UpdatePresence(string artist, string track, string album, bool playing, int index, int totalTracks, string imageUrl, string yearStr)
+        private void UpdatePresence(string artist, string track, string album, bool playing, int index, int totalTracks, string imageUrl, string yearStr)
         {
             presence.largeImageKey = "albumart";
 
@@ -187,8 +187,6 @@ namespace MusicBeePlugin
             long duration = this.mbApiInterface.NowPlaying_GetDuration() / 1000;
             long end = now + duration;
 
-            TimeSpan t = DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1));
-
             if (playing)
             {
                 long pos = (this.mbApiInterface.Player_GetPosition() / 1000);
@@ -221,20 +219,41 @@ namespace MusicBeePlugin
                 Panel configPanel = (Panel) Panel.FromHandle(panelHandle);
 
                 CheckBox showYear = new CheckBox();
-                showYear.Name = "ShowYear";
                 showYear.Text = "Show year next to album";
                 showYear.Height = 16;
                 showYear.ForeColor = Color.FromArgb(mbApiInterface.Setting_GetSkinElementColour(SkinElement.SkinInputPanelLabel, ElementState.ElementStateDefault, ElementComponent.ComponentForeground));
                 showYear.Checked = newConfig.showYear;
                 showYear.CheckedChanged += ShowYearValueChanged;
 
-                configPanel.Controls.AddRange(new Control[] { showYear });
+                Label customArtworkUrlLabel = new Label();
+                customArtworkUrlLabel.Height = 16;
+                customArtworkUrlLabel.Width = 128;
+                customArtworkUrlLabel.ForeColor = Color.FromArgb(mbApiInterface.Setting_GetSkinElementColour(SkinElement.SkinInputPanelLabel, ElementState.ElementStateDefault, ElementComponent.ComponentForeground));
+                customArtworkUrlLabel.Text = "Custom Artwork URL";
+                customArtworkUrlLabel.Top = 24;
+                customArtworkUrlLabel.TextAlign = ContentAlignment.MiddleLeft;
+
+                TextBox customArtworkUrl = (TextBox) mbApiInterface.MB_AddPanel(configPanel, PluginPanelDock.TextBox);
+                customArtworkUrl.Height = 16;
+                customArtworkUrl.Width = 192;
+                customArtworkUrl.ForeColor = Color.FromArgb(mbApiInterface.Setting_GetSkinElementColour(SkinElement.SkinInputPanelLabel, ElementState.ElementStateDefault, ElementComponent.ComponentForeground));
+                customArtworkUrl.Text = newConfig.customArtworkUrl;
+                customArtworkUrl.TextChanged += CustomArtworkUrlValueChanged;
+                customArtworkUrl.Top = 24;
+                customArtworkUrl.Left = customArtworkUrlLabel.Width;
+
+                configPanel.Controls.AddRange(new Control[] { showYear, customArtworkUrlLabel, customArtworkUrl });
             }
             return false;
         }
 
         private void ShowYearValueChanged(object sender, EventArgs args) {
             newConfig.showYear = (sender as CheckBox).Checked;
+        }
+
+        private void CustomArtworkUrlValueChanged(object sender, EventArgs args)
+        {
+            newConfig.customArtworkUrl = (sender as TextBox).Text;
         }
 
         // called by MusicBee when the user clicks Apply or Save in the MusicBee Preferences screen.
@@ -332,16 +351,25 @@ namespace MusicBeePlugin
                     {
                         try
                         {
-                            await FetchArt(trackTitle, originalArtist, albumArtist, album);
+                            string imageUrl = "";
+                            if (config.customArtworkUrl != "")
+                            {
+                                imageUrl = config.customArtworkUrl + "?" + (long)DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1)).TotalSeconds;
+                            }
+                            else
+                            {
+                                await FetchArt(trackTitle, originalArtist, albumArtist, album);
 
-                            string imageUrl = albumArtCache[$"{albumArtist}_{album}"];
-                            if (imageUrl == "" && imageUrl == "unknown") {
-                                imageUrl = albumArtCache[$"{originalArtist}_{album}"];
+                                imageUrl = albumArtCache[$"{albumArtist}_{album}"];
                                 if (imageUrl == "" && imageUrl == "unknown")
-                                    imageUrl = albumArtCache[$"{originalArtist}_{trackTitle}"];
+                                {
+                                    imageUrl = albumArtCache[$"{originalArtist}_{album}"];
+                                    if (imageUrl == "" && imageUrl == "unknown")
+                                        imageUrl = albumArtCache[$"{originalArtist}_{trackTitle}"];
+                                }
                             }
 
-                            await UpdatePresence(artist, trackTitle, album, isPlaying, index + 1, tracks.Length, imageUrl, year);
+                            UpdatePresence(artist, trackTitle, album, isPlaying, index + 1, tracks.Length, imageUrl, year);
                         }
                         catch (Exception err)
                         {
@@ -357,9 +385,11 @@ namespace MusicBeePlugin
             public Configuration()
             {
                 this.showYear = true;
+                this.customArtworkUrl = "";
             }
 
             public bool showYear { get; set; }
+            public string customArtworkUrl { get; set; }
 
             public object Clone()
             {
