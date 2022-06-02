@@ -78,22 +78,29 @@ namespace MusicBeePlugin
         private async Task FetchArt(string track, string artist, string albumArtist, string album)
         {
             string key = $"{album}";
-            if (!albumArtCache.ContainsKey(key))
+            try
             {
-                string url = "";
+                if (!albumArtCache.ContainsKey(key))
+                {
+                    string url = "";
 
-                url = await FmApi.AlbumGetInfo_GetAlbumImage(artist, album, AlbumGetInfo_FindAlbumImg);
+                    url = await FmApi.AlbumGetInfo_GetAlbumImage(artist, album, AlbumGetInfo_FindAlbumImg);
 
-                if (string.IsNullOrEmpty(url))
-                    url = await FmApi.AlbumGetInfo_GetAlbumImage(artist, albumArtist, AlbumGetInfo_FindAlbumImg);
+                    if (string.IsNullOrEmpty(url))
+                        url = await FmApi.AlbumGetInfo_GetAlbumImage(artist, albumArtist, AlbumGetInfo_FindAlbumImg);
 
-                if (string.IsNullOrEmpty(url))
-                    url = await FmApi.AlbumSearch_GetAlbumImage(album, AlbumSearch_FindAlbumImg);
+                    if (string.IsNullOrEmpty(url))
+                        url = await FmApi.AlbumSearch_GetAlbumImage(album, AlbumSearch_FindAlbumImg);
 
-                if (string.IsNullOrEmpty(url))
-                    albumArtCache.Add(key, "unknown");
-                else
-                    albumArtCache.Add(key, url);
+                    if (string.IsNullOrEmpty(url))
+                        albumArtCache.Add(key, "unknown");
+                    else
+                        albumArtCache.Add(key, url);
+                }
+            }
+            catch
+            {
+                albumArtCache.Add(key, "unknown");
             }
         }
 
