@@ -15,6 +15,8 @@ using System.Runtime.Serialization;
 using System.IO;
 using System.Diagnostics;
 
+using EpikLastFMApi;
+
 namespace MusicBeePlugin
 {
     public partial class Plugin
@@ -24,8 +26,7 @@ namespace MusicBeePlugin
         private DiscordRpc.RichPresence presence = new DiscordRpc.RichPresence();
 
         private string APPLICATION_ID = "519949979176140821";
-        //private string LASTFM_API_KEY = "cba04ed41dff8bfb9c10835ee747ba94"; // taken from MusicBee
-        private string LASTFM_BASE_URL = "https://ws.audioscrobbler.com/2.0/?method=album.getinfo&api_key=cba04ed41dff8bfb9c10835ee747ba94&format=json";
+        private string imageSize = "large"; // small, medium, large, extralarge, mega
 
         private static HttpClient Client = new HttpClient();
 
@@ -33,6 +34,8 @@ namespace MusicBeePlugin
 
         public Plugin.Configuration config = new Plugin.Configuration();
         public Plugin.Configuration newConfig = new Plugin.Configuration();
+
+        private LastFM_API FmApi = new LastFM_API("cba04ed41dff8bfb9c10835ee747ba94"); // LastFM Api key taken from MusicBee
 
         public PluginInfo Initialise(IntPtr apiInterfacePtr)
         {
@@ -66,61 +69,91 @@ namespace MusicBeePlugin
             handlers.disconnectedCallback += HandleDisconnectedCallback;
 
             DiscordRpc.Initialize(APPLICATION_ID, ref handlers, true, null);
-
         }
 
         private void HandleReadyCallback(ref DiscordRpc.DiscordUser user) { }
         private void HandleErrorCallback(int errorCode, string message) { }
         private void HandleDisconnectedCallback(int errorCode, string message) { }
 
-        private async Task FetchArtRequest(string key, string url)
+        private async Task FetchArt(string track, string artist, string albumArtist, string album)
         {
-            HttpResponseMessage lastFmInfoResp = await Client.GetAsync(url);
-            if (lastFmInfoResp.IsSuccessStatusCode)
+            string key = $"{album}";
+            if (!albumArtCache.ContainsKey(key))
             {
-                string jsonString = await lastFmInfoResp.Content.ReadAsStringAsync();
-                JObject jsonData = JsonConvert.DeserializeObject<JObject>(jsonString);
-                try
-                {
-                    var images = jsonData["album"]["image"].Children<JObject>();
-                    string albumArtUrl = (string)((JObject)images.Where(x => (string)x["size"] == "large").FirstOrDefault())["#text"];
-                    albumArtCache.Add(key, albumArtUrl);
-                }
-                catch
-                {
+                string url = "";
+
+                url = await FmApi.AlbumGetInfo_GetAlbumImage(artist, album, AlbumGetInfo_FindAlbumImg);
+
+                if (string.IsNullOrEmpty(url))
+                    url = await FmApi.AlbumGetInfo_GetAlbumImage(artist, albumArtist, AlbumGetInfo_FindAlbumImg);
+
+                if (string.IsNullOrEmpty(url))
+                    url = await FmApi.AlbumSearch_GetAlbumImage(album, AlbumSearch_FindAlbumImg);
+
+                if (string.IsNullOrEmpty(url))
                     albumArtCache.Add(key, "unknown");
-                }
-            }
-            else
-            {
-                albumArtCache.Add(key, "unknown");
+                else
+                    albumArtCache.Add(key, url);
             }
         }
 
-        private async Task FetchArt(string track, string artist, string albumArtist, string album)
+        private string AlbumSearch_FindAlbumImg(JObject Json, string AlbumRequest)
         {
-            string url = LASTFM_BASE_URL;
-            string key = "";
+            Dictionary<string, string> ImageList = new Dictionary<string, string>();
 
-            if (albumArtist != null && album != null && !albumArtCache.ContainsKey($"{albumArtist}_{album}"))
+            dynamic DJson = Json;
+
+            JArray Albums = DJson.results.albummatches.album;
+
+            foreach (dynamic Album in Albums)
             {
-                url += $"&artist={HttpUtility.UrlEncode(albumArtist)}&album={HttpUtility.UrlEncode(album)}";
-                key = $"{albumArtist}_{album}";
-                await FetchArtRequest(key, url);
+                string name = Album.name;
+                JArray Images = Album.image;
+                if
+                (
+                    name == AlbumRequest |
+                    name.ToLower() == AlbumRequest.ToLower() |
+                    name.ToLower().Replace(" ", "") == AlbumRequest.ToLower().Replace(" ", "")
+                )
+                {
+                    foreach (dynamic Image in Images)
+                    {
+                        string url = Image["#text"];
+                        string size = Image["size"];
+                        if (!string.IsNullOrEmpty(url) & !string.IsNullOrEmpty(size))
+                            ImageList.Add(size, url);
+                    }
+                    if (ImageList.Count > 0)
+                        break;
+                }
             }
 
-            if (artist != null && album != null && albumArtist != null && albumArtCache.ContainsKey($"{albumArtist}_{album}") && (albumArtCache[$"{albumArtist}_{album}"] == "" || albumArtCache[$"{albumArtist}_{album}"] == "unknown") && !albumArtCache.ContainsKey($"{artist}_{album}"))
+            if (ImageList.Count == 0)
+                return "";
+
+            return ImageList.ContainsKey(imageSize) ? ImageList[imageSize] : ImageList.Values.Last();
+        }
+
+        private string AlbumGetInfo_FindAlbumImg(JObject Json)
+        {
+            Dictionary<string, string> ImageList = new Dictionary<string, string>();
+
+            dynamic DJson = Json;
+
+            JArray Images = DJson.album.image;
+
+            foreach (dynamic Image in Images)
             {
-                url += $"&artist={HttpUtility.UrlEncode(artist)}&album={HttpUtility.UrlEncode(album)}";
-                key = $"{artist}_{album}";
-                await FetchArtRequest(key, url);
+                string url = Image["#text"];
+                string size = Image["size"];
+                if (!string.IsNullOrEmpty(url) & !string.IsNullOrEmpty(size))
+                    ImageList.Add(size, url);
             }
 
-            if (artist != null && album != null && albumArtCache.ContainsKey($"{artist}_{album}") && (albumArtCache[$"{artist}_{album}"] == "" || albumArtCache[$"{artist}_{album}"] == "unknown") && !albumArtCache.ContainsKey($"{artist}_{track}")) {
-                url += $"&artist={HttpUtility.UrlEncode(artist)}&track={HttpUtility.UrlEncode(track)}";
-                key = $"{artist}_{track}";
-                await FetchArtRequest(key, url);
-            }
+            if (ImageList.Count == 0)
+                return "";
+
+            return ImageList.ContainsKey(imageSize) ? ImageList[imageSize] : ImageList.Values.Last();
         }
 
         private void UpdatePresence(string artist, string track, string album, bool playing, int index, int totalTracks, string imageUrl, string yearStr)
@@ -360,13 +393,7 @@ namespace MusicBeePlugin
                             {
                                 await FetchArt(trackTitle, originalArtist, albumArtist, album);
 
-                                imageUrl = albumArtCache[$"{albumArtist}_{album}"];
-                                if (imageUrl == "" && imageUrl == "unknown")
-                                {
-                                    imageUrl = albumArtCache[$"{originalArtist}_{album}"];
-                                    if (imageUrl == "" && imageUrl == "unknown")
-                                        imageUrl = albumArtCache[$"{originalArtist}_{trackTitle}"];
-                                }
+                                imageUrl = albumArtCache[$"{album}"];
                             }
 
                             UpdatePresence(artist, trackTitle, album, isPlaying, index + 1, tracks.Length, imageUrl, year);
