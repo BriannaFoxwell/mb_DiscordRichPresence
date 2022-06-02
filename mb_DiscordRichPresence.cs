@@ -84,13 +84,13 @@ namespace MusicBeePlugin
                 {
                     string url = "";
 
-                    url = await FmApi.AlbumGetInfo_GetAlbumImage(artist, album, AlbumGetInfo_FindAlbumImg);
+                    url = await FmApi.AlbumGetInfo(artist, album, AlbumGetInfo_FindAlbumImg);
 
                     if (string.IsNullOrEmpty(url))
-                        url = await FmApi.AlbumGetInfo_GetAlbumImage(artist, albumArtist, AlbumGetInfo_FindAlbumImg);
+                        url = await FmApi.AlbumGetInfo(artist, albumArtist, AlbumGetInfo_FindAlbumImg);
 
                     if (string.IsNullOrEmpty(url))
-                        url = await FmApi.AlbumSearch_GetAlbumImage(album, AlbumSearch_FindAlbumImg);
+                        url = await FmApi.AlbumSearch(album, AlbumSearch_FindAlbumImg);
 
                     if (string.IsNullOrEmpty(url))
                         albumArtCache.Add(key, "unknown");
