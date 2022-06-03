@@ -14,14 +14,17 @@ namespace EpikLastFMApi
         private string key { get; set; }
         public LastFM_API(string _key) { key = _key; }
 
-        public async Task<string> AlbumSearch(string Album, Func<JObject, string, string> FindUrl)
+        public async Task<string> AlbumSearch(string Album, Func<JObject, string, string> FindValue)
         {
             try
             {
+                if (string.IsNullOrWhiteSpace(Album))
+                    throw new ArgumentNullException();
+
                 string Url = $"{BaseURL}?method=album.search&album={UriEnc(Album)}";
                 JObject Json = await JsonResponse(Url);
 
-                return FindUrl(Json, Album);
+                return FindValue(Json, Album);
             }
             catch (HttpRequestException)
             {
@@ -30,14 +33,17 @@ namespace EpikLastFMApi
             }
         }
 
-        public async Task<string> AlbumGetInfo(string Artist, string Album, Func<JObject, string> FindUrl)
+        public async Task<string> AlbumGetInfo(string Artist, string Album, Func<JObject, string> FindValue)
         {
             try
             {
+                if (string.IsNullOrWhiteSpace(Album) | string.IsNullOrWhiteSpace(Artist))
+                    throw new ArgumentNullException();
+
                 string Url = $"{BaseURL}?method=album.getinfo&artist={UriEnc(Artist)}&album={UriEnc(Album)}";
                 JObject Json = await JsonResponse(Url);
 
-                return FindUrl(Json);
+                return FindValue(Json);
             }
             catch (HttpRequestException)
             {
