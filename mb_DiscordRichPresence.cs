@@ -77,7 +77,7 @@ namespace MusicBeePlugin
 
         private async Task FetchArt(string track, string artist, string albumArtist, string album)
         {
-            string key = $"{album}";
+            string key = $"{albumArtist}_{album}";
             try
             {
                 if (!albumArtCache.ContainsKey(key))
@@ -400,7 +400,7 @@ namespace MusicBeePlugin
                             {
                                 await FetchArt(trackTitle, originalArtist, albumArtist, album);
 
-                                imageUrl = albumArtCache[$"{album}"];
+                                imageUrl = albumArtCache[$"{albumArtist}_{album}"];
                             }
 
                             UpdatePresence(artist, trackTitle, album, isPlaying, index + 1, tracks.Length, imageUrl, year);
