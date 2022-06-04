@@ -15,7 +15,7 @@ namespace EpikLastFMApi
         private string key { get; set; }
         public LastFM_API(string _key) { key = _key; }
 
-        public async Task<string> AlbumSearch(Func<JObject, string, string> FindValue, string Album)
+        public async Task<string> AlbumSearch(Func<JObject, string, string, string> FindValue, string Artist, string Album)
         {
             try
             {
@@ -25,11 +25,10 @@ namespace EpikLastFMApi
                 string Url = $"{BaseURL}?method=album.search&album={UriEnc(Album)}";
                 JObject Json = await JsonResponse(Url);
 
-                return FindValue(Json, Album);
+                return FindValue(Json, Artist, Album);
             }
-            catch (HttpRequestException)
-            {
-                Console.WriteLine("Unable to make a request.");
+            catch
+            { 
                 return "";
             }
         }
@@ -46,9 +45,8 @@ namespace EpikLastFMApi
 
                 return FindValue(Json);
             }
-            catch (HttpRequestException)
+            catch
             {
-                Console.WriteLine("Unable to make a request.");
                 return "";
             }
         }
