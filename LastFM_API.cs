@@ -1,6 +1,7 @@
 ﻿using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Text;
@@ -14,7 +15,7 @@ namespace EpikLastFMApi
         private string key { get; set; }
         public LastFM_API(string _key) { key = _key; }
 
-        public async Task<string> AlbumSearch(string Album, Func<JObject, string, string> FindValue)
+        public async Task<string> AlbumSearch(Func<JObject, string, string> FindValue, string Album)
         {
             try
             {
@@ -33,14 +34,14 @@ namespace EpikLastFMApi
             }
         }
 
-        public async Task<string> AlbumGetInfo(string Artist, string Album, Func<JObject, string> FindValue)
+        public async Task<string> AlbumGetInfo(Func<JObject, string> FindValue, string Album, string Artist = null, string Track = null)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(Album) | string.IsNullOrWhiteSpace(Artist))
+                if (string.IsNullOrWhiteSpace(Album) | (string.IsNullOrWhiteSpace(Artist) & string.IsNullOrWhiteSpace(Track)))
                     throw new ArgumentNullException();
 
-                string Url = $"{BaseURL}?method=album.getinfo&artist={UriEnc(Artist)}&album={UriEnc(Album)}";
+                string Url = $"{BaseURL}?method=album.getinfo&album={UriEnc(Album)}" + (!string.IsNullOrWhiteSpace(Track) ? $"&track={UriEnc(Track)}" : $"&artist={UriEnc(Artist)}");
                 JObject Json = await JsonResponse(Url);
 
                 return FindValue(Json);
