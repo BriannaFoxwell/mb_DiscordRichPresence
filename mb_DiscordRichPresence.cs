@@ -82,7 +82,7 @@ namespace MusicBeePlugin
             {
                 if (!albumArtCache.ContainsKey(key))
                 {
-                    string url = await FmApi.AlbumSearch(AlbumSearch_FindAlbumImg, album);
+                    string url = await FmApi.AlbumSearch(AlbumSearch_FindAlbumImg, artist, album);
 
                     if (string.IsNullOrEmpty(url))
                         url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, artist, album);
@@ -105,7 +105,7 @@ namespace MusicBeePlugin
             }
         }
 
-        private string AlbumSearch_FindAlbumImg(JObject Json, string AlbumRequest)
+        private string AlbumSearch_FindAlbumImg(JObject Json, string ArtistRequest, string AlbumRequest)
         {
             Dictionary<string, string> ImageList = new Dictionary<string, string>();
 
@@ -115,24 +115,29 @@ namespace MusicBeePlugin
 
             foreach (dynamic Album in Albums)
             {
-                string name = Album.name;
-                JArray Images = Album.image;
-                if
-                (
-                    name == AlbumRequest |
-                    name.ToLower() == AlbumRequest.ToLower() |
-                    name.ToLower().Replace(" ", "") == AlbumRequest.ToLower().Replace(" ", "")
-                )
+                string Artist = Album.artist;
+                if (Artist.ToLower() == ArtistRequest.ToLower() | string.IsNullOrWhiteSpace(ArtistRequest) | string.IsNullOrWhiteSpace(Artist))
                 {
-                    foreach (dynamic Image in Images)
+                    string name = Album.name;
+                    JArray Images = Album.image;
+                    if
+                    (
+                        name == AlbumRequest |
+                        name.ToLower() == AlbumRequest.ToLower() |
+                        name.ToLower().Replace(" ", "") == AlbumRequest.ToLower().Replace(" ", "") |
+                        Artist.ToLower() == ArtistRequest.ToLower()
+                    )
                     {
-                        string url = Image["#text"];
-                        string size = Image["size"];
-                        if (!string.IsNullOrEmpty(url) & !string.IsNullOrEmpty(size))
-                            ImageList.Add(size, url);
+                        foreach (dynamic Image in Images)
+                        {
+                            string url = Image["#text"];
+                            string size = Image["size"];
+                            if (!string.IsNullOrEmpty(url) & !string.IsNullOrEmpty(size))
+                                ImageList.Add(size, url);
+                        }
+                        if (ImageList.Count > 0)
+                            break;
                     }
-                    if (ImageList.Count > 0)
-                        break;
                 }
             }
 
