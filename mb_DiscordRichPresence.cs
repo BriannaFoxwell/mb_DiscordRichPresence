@@ -116,14 +116,12 @@ namespace MusicBeePlugin
                 {
                     string name = Album.name;
                     JArray Images = Album.image;
-                    if
-                    (
-                        name == AlbumRequest |
-                        name.ToLower() == AlbumRequest.ToLower() |
-                        name.ToLower().Replace(" ", "") == AlbumRequest.ToLower().Replace(" ", "") |
-                        Artist.ToLower() == ArtistRequest.ToLower() | 
-                        Artist.ToLower() == "various artistrs"
-                    )
+
+                    bool FoundAlbum = ( name == AlbumRequest | name.ToLower() == AlbumRequest.ToLower() | name.ToLower().Replace(" ", "") == AlbumRequest.ToLower().Replace(" ", "") );
+                    bool FoundArtist = ( Artist.ToLower() == ArtistRequest.ToLower() );
+                    bool IsVarious = ( Artist.ToLower() == "various artists" );
+
+                    if (FoundAlbum | FoundArtist | ( IsVarious & FoundAlbum ))
                     {
                         foreach (dynamic Image in Images)
                         {

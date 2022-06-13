@@ -15,7 +15,7 @@ namespace EpikLastFMApi
         private string key { get; set; }
         public LastFM_API(string _key) { key = _key; }
 
-        public async Task<string> AlbumSearch(Func<JObject, string, string, string> FindValue, string Album, string Artist = null)
+        public async Task<string> AlbumSearch(Func<JObject, string, string, string> FindValue, string Album, string Artist = "")
         {
             try
             {
@@ -33,7 +33,7 @@ namespace EpikLastFMApi
             }
         }
 
-        public async Task<string> AlbumGetInfo(Func<JObject, string> FindValue, string Album, string Artist = null, string Track = null)
+        public async Task<string> AlbumGetInfo(Func<JObject, string> FindValue, string Album, string Artist = "", string Track = "")
         {
             try
             {
