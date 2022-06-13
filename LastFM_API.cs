@@ -15,7 +15,7 @@ namespace EpikLastFMApi
         private string key { get; set; }
         public LastFM_API(string _key) { key = _key; }
 
-        public async Task<string> AlbumSearch(Func<JObject, string, string, string> FindValue, string Artist, string Album)
+        public async Task<string> AlbumSearch(Func<JObject, string, string, string> FindValue, string Album, string Artist = null)
         {
             try
             {
@@ -37,10 +37,16 @@ namespace EpikLastFMApi
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(Album) | (string.IsNullOrWhiteSpace(Artist) & string.IsNullOrWhiteSpace(Track)))
+                if (string.IsNullOrWhiteSpace(Album) | string.IsNullOrWhiteSpace(Artist))
                     throw new ArgumentNullException();
 
-                string Url = $"{BaseURL}?method=album.getinfo&album={UriEnc(Album)}" + (!string.IsNullOrWhiteSpace(Track) ? $"&track={UriEnc(Track)}" : $"&artist={UriEnc(Artist)}");
+                string Url = $"{BaseURL}?method=album.getinfo&album={UriEnc(Album)}";
+
+                if (!string.IsNullOrWhiteSpace(Artist))
+                    Url += $"&artist={UriEnc(Artist)}";
+                if (!string.IsNullOrWhiteSpace(Track))
+                    Url += $"&track={UriEnc(Track)}";
+
                 JObject Json = await JsonResponse(Url);
 
                 return FindValue(Json);

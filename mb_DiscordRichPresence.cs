@@ -28,8 +28,6 @@ namespace MusicBeePlugin
         private string APPLICATION_ID = "519949979176140821";
         private string imageSize = "large"; // small, medium, large, extralarge, mega
 
-        private static HttpClient Client = new HttpClient();
-
         private static Dictionary<string, string> albumArtCache = new Dictionary<string, string>();
 
         public Plugin.Configuration config = new Plugin.Configuration();
@@ -78,30 +76,27 @@ namespace MusicBeePlugin
         private async Task FetchArt(string track, string artist, string albumArtist, string album)
         {
             string key = $"{albumArtist}_{album}";
-            try
+
+            if (!albumArtCache.ContainsKey(key))
             {
-                if (!albumArtCache.ContainsKey(key))
-                {
-                    string url = await FmApi.AlbumSearch(AlbumSearch_FindAlbumImg, artist, album);
+                string url = await FmApi.AlbumSearch(AlbumSearch_FindAlbumImg, album, artist);
 
-                    if (string.IsNullOrEmpty(url))
-                        url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, artist, album);
+                if (string.IsNullOrEmpty(url))
+                    url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, album, artist);
 
-                    if (string.IsNullOrEmpty(url))
-                        url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, artist, albumArtist);
+                if (string.IsNullOrEmpty(url))
+                    url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, albumArtist, artist);
 
-                    if (string.IsNullOrEmpty(url))
-                        url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, track, albumArtist);
+                if (string.IsNullOrEmpty(url))
+                    url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, albumArtist, artist, track);
 
-                    if (string.IsNullOrEmpty(url))
-                        albumArtCache.Add(key, "unknown");
-                    else
-                        albumArtCache.Add(key, url);
-                }
-            }
-            catch
-            {
-                albumArtCache.Add(key, "unknown");
+                if (string.IsNullOrEmpty(url))
+                    url = await FmApi.AlbumSearch(AlbumSearch_FindAlbumImg, album);
+
+                if (string.IsNullOrEmpty(url))
+                    albumArtCache.Add(key, "unknown");
+                else
+                    albumArtCache.Add(key, url);
             }
         }
 
@@ -116,7 +111,8 @@ namespace MusicBeePlugin
             foreach (dynamic Album in Albums)
             {
                 string Artist = Album.artist;
-                if (Artist.ToLower() == ArtistRequest.ToLower() | string.IsNullOrWhiteSpace(ArtistRequest) | string.IsNullOrWhiteSpace(Artist))
+                bool ArtistUnknown = string.IsNullOrWhiteSpace(ArtistRequest) | string.IsNullOrWhiteSpace(Artist);
+                if (Artist.ToLower() == ArtistRequest.ToLower() | ArtistUnknown)
                 {
                     string name = Album.name;
                     JArray Images = Album.image;
@@ -125,7 +121,8 @@ namespace MusicBeePlugin
                         name == AlbumRequest |
                         name.ToLower() == AlbumRequest.ToLower() |
                         name.ToLower().Replace(" ", "") == AlbumRequest.ToLower().Replace(" ", "") |
-                        Artist.ToLower() == ArtistRequest.ToLower()
+                        Artist.ToLower() == ArtistRequest.ToLower() | 
+                        Artist.ToLower() == "various artistrs"
                     )
                     {
                         foreach (dynamic Image in Images)
@@ -176,29 +173,19 @@ namespace MusicBeePlugin
             // NOTE(yui): this is very ugly
             string year = null;
 
-            if (yearStr.Length > 0)
+            if (yearStr.Length > 0 && config.showYear)
             {
-                try
-                {
-                    year = DateTime.Parse(yearStr).Year.ToString();
-                }
-                catch (FormatException)
-                {
+                DateTime result;
+
+                if (DateTime.TryParse(yearStr, out result))
+                    year = result.Year.ToString();
+                else
                     if (yearStr.Length == 4)
-                    {
-                        year = DateTime.ParseExact(yearStr, "yyyy", null).Year.ToString();
-                    }
-                }
+                        if (DateTime.TryParseExact(yearStr, "yyyy", null, System.Globalization.DateTimeStyles.None, out result))
+                            year = result.Year.ToString();
             }
 
-            if (year != null && config.showYear)
-            {
-                presence.largeImageText = $"{album} ({year})";
-            }
-            else
-            {
-                presence.largeImageText = album;
-            }
+            presence.largeImageText = $"{album}" + ( year != null ? $" ({year})" : "" );
 
             if (imageUrl != "" && imageUrl != "unknown")
                 presence.largeImageKey = imageUrl;
