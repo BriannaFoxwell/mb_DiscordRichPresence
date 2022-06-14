@@ -183,7 +183,7 @@ namespace MusicBeePlugin
                             year = result.Year.ToString();
             }
 
-            presence.largeImageText = $"{album}" + ( year != null ? $" ({year})" : "" );
+            presence.largeImageText = $"{album}" + ( (year != null && config.showYear) ? $" ({year})" : "" );
 
             if (imageUrl != "" && imageUrl != "unknown")
                 presence.largeImageKey = imageUrl;
