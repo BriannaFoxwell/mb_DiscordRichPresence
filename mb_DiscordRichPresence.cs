@@ -79,20 +79,20 @@ namespace MusicBeePlugin
 
             if (!albumArtCache.ContainsKey(key))
             {
-                string url = await FmApi.AlbumSearch(AlbumSearch_FindAlbumImg, album, artist);
-
+                string url = await FmApi.AlbumSearch(AlbumSearch_FindAlbumImg, album, albumArtist);
+                
                 if (string.IsNullOrEmpty(url))
                     url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, album, artist);
 
                 if (string.IsNullOrEmpty(url))
-                    url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, albumArtist, artist);
+                    url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, album, albumArtist);
 
                 if (string.IsNullOrEmpty(url))
                     url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, albumArtist, artist, track);
 
                 if (string.IsNullOrEmpty(url))
                     url = await FmApi.AlbumSearch(AlbumSearch_FindAlbumImg, album);
-
+                
                 if (string.IsNullOrEmpty(url))
                     albumArtCache.Add(key, "unknown");
                 else
@@ -112,16 +112,17 @@ namespace MusicBeePlugin
             {
                 string Artist = Album.artist;
                 bool ArtistUnknown = string.IsNullOrWhiteSpace(ArtistRequest) | string.IsNullOrWhiteSpace(Artist);
-                if (Artist.ToLower() == ArtistRequest.ToLower() | ArtistUnknown)
+                bool IsVarious = (ArtistRequest.ToLower() == "va" | ArtistRequest.ToLower() == "various artists");
+
+                if (Artist.ToLower() == ArtistRequest.ToLower() | ArtistUnknown | IsVarious)
                 {
                     string name = Album.name;
                     JArray Images = Album.image;
 
-                    bool FoundAlbum = ( name == AlbumRequest | name.ToLower() == AlbumRequest.ToLower() | name.ToLower().Replace(" ", "") == AlbumRequest.ToLower().Replace(" ", "") );
-                    bool FoundArtist = ( Artist.ToLower() == ArtistRequest.ToLower() );
-                    bool IsVarious = ( Artist.ToLower() == "various artists" );
+                    bool FoundAlbum = (name == AlbumRequest | name.ToLower() == AlbumRequest.ToLower() | name.ToLower().Replace(" ", "") == AlbumRequest.ToLower().Replace(" ", ""));
+                    bool FoundArtist = (Artist.ToLower() == ArtistRequest.ToLower());
 
-                    if (FoundAlbum | FoundArtist | ( IsVarious & FoundAlbum ))
+                    if (FoundAlbum | FoundArtist | (IsVarious & FoundAlbum))
                     {
                         foreach (dynamic Image in Images)
                         {
