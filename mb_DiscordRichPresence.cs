@@ -1,24 +1,31 @@
 ﻿using System;
-using System.Runtime.InteropServices;
 using System.Drawing;
 using System.Windows.Forms;
 using System.Collections.Generic;
 
 using DiscordInterface;
 using System.Threading.Tasks;
-using System.Net.Http;
-using System.Web;
-using Newtonsoft.Json;
+
 using Newtonsoft.Json.Linq;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.IO;
-using System.Diagnostics;
 
 using EpikLastFMApi;
 
 namespace MusicBeePlugin
 {
+    public class CurrentSongInfo
+    {
+        public string Artist { get; set; }
+        public string Track { get; set; }
+        public string Album { get; set; }
+        public bool Playing { get; set; }
+        public int Index { get; set; }
+        public int TotalTracks { get; set; }
+        public string ImageUrl { get; set; }
+        public string YearStr { get; set; }
+    }
     public partial class Plugin
     {
         private MusicBeeApiInterface mbApiInterface;
@@ -26,7 +33,7 @@ namespace MusicBeePlugin
         private DiscordRpc.RichPresence presence = new DiscordRpc.RichPresence();
 
         private string APPLICATION_ID = "519949979176140821";
-        private string imageSize = "large"; // small, medium, large, extralarge, mega
+        private string imageSize = "medium"; // small, medium, large, extralarge, mega
 
         private static Dictionary<string, string> albumArtCache = new Dictionary<string, string>();
 
@@ -79,20 +86,22 @@ namespace MusicBeePlugin
 
             if (!albumArtCache.ContainsKey(key))
             {
-                string url = await FmApi.AlbumSearch(AlbumSearch_FindAlbumImg, album, albumArtist);
-                
-                if (string.IsNullOrEmpty(url))
-                    url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, album, artist);
+                string mainArtist = albumArtist.Split(new [] { ", ", "; " }, StringSplitOptions.None)[0];
+
+                string url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, album, mainArtist);
 
                 if (string.IsNullOrEmpty(url))
                     url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, album, albumArtist);
 
                 if (string.IsNullOrEmpty(url))
-                    url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, albumArtist, artist, track);
+                    url = await FmApi.AlbumGetInfo(AlbumGetInfo_FindAlbumImg, album, artist, track);
+
+                if (string.IsNullOrEmpty(url))
+                    url = await FmApi.AlbumSearch(AlbumSearch_FindAlbumImg, album, mainArtist);
 
                 if (string.IsNullOrEmpty(url))
                     url = await FmApi.AlbumSearch(AlbumSearch_FindAlbumImg, album);
-                
+
                 if (string.IsNullOrEmpty(url))
                     albumArtCache.Add(key, "unknown");
                 else
@@ -165,11 +174,19 @@ namespace MusicBeePlugin
             return ImageList.ContainsKey(imageSize) ? ImageList[imageSize] : ImageList.Values.Last();
         }
 
-        private void UpdatePresence(string artist, string track, string album, bool playing, int index, int totalTracks, string imageUrl, string yearStr)
+        private void UpdatePresence(CurrentSongInfo SongInfo)
         {
             presence.largeImageKey = "albumart";
 
-            // NOTE(yui): this is very ugly
+            string yearStr   =   SongInfo.YearStr;
+            string album     =   SongInfo.Album;
+            string imageUrl  =   SongInfo.ImageUrl;
+            string track     =   SongInfo.Track;
+            string artist    =   SongInfo.Artist;
+            bool playing     =   SongInfo.Playing;
+            int index        =   SongInfo.Index;
+            int totalTracks  =   SongInfo.TotalTracks;
+
             string year = null;
 
             if (yearStr.Length > 0 && config.showYear)
@@ -223,10 +240,9 @@ namespace MusicBeePlugin
             {
                 long pos = (this.mbApiInterface.Player_GetPosition() / 1000);
                 presence.startTimestamp = now - pos;
+
                 if (duration != -1)
-                {
                     presence.endTimestamp = end - pos;
-                }
             }
             else
             {
@@ -347,25 +363,17 @@ namespace MusicBeePlugin
             if (string.IsNullOrEmpty(artist))
             {
                 if (!string.IsNullOrEmpty(albumArtist))
-                {
                     artist = albumArtist;
-                }
                 else
-                {
                     artist = "(unknown artist)";
-                }
             }
 
             if (artist.Length > 128)
             {
                 if (!string.IsNullOrEmpty(albumArtist) && albumArtist.Length <= 128)
-                {
                     artist = albumArtist;
-                }
                 else
-                {
                     artist = artist.Substring(0, 122) + "...";
-                }
             }
 
             if (type == NotificationType.PluginStartup)
@@ -385,9 +393,7 @@ namespace MusicBeePlugin
                         {
                             string imageUrl = "";
                             if (config.customArtworkUrl != "")
-                            {
                                 imageUrl = config.customArtworkUrl + "?" + (long)DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1)).TotalSeconds;
-                            }
                             else
                             {
                                 await FetchArt(trackTitle, originalArtist, albumArtist, album);
@@ -395,7 +401,17 @@ namespace MusicBeePlugin
                                 imageUrl = albumArtCache[$"{albumArtist}_{album}"];
                             }
 
-                            UpdatePresence(artist, trackTitle, album, isPlaying, index + 1, tracks.Length, imageUrl, year);
+                            UpdatePresence(new CurrentSongInfo
+                            {
+                                Artist = artist,
+                                Track = trackTitle,
+                                Album = album,
+                                Playing = isPlaying,
+                                Index = index + 1,
+                                TotalTracks = tracks.Length,
+                                ImageUrl = imageUrl,
+                                YearStr = year
+                            });
                         }
                         catch (Exception err)
                         {
