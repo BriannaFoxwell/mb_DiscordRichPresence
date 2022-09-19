@@ -3,8 +3,9 @@ using System.Drawing;
 using System.Windows.Forms;
 using System.Collections.Generic;
 
-using DiscordInterface;
 using System.Threading.Tasks;
+
+using DiscordRPC;
 
 using Newtonsoft.Json.Linq;
 using System.Linq;
@@ -12,6 +13,8 @@ using System.Runtime.Serialization;
 using System.IO;
 
 using EpikLastFMApi;
+using DiscordRPC.Logging;
+using System.Runtime.InteropServices;
 
 namespace MusicBeePlugin
 {
@@ -25,14 +28,16 @@ namespace MusicBeePlugin
         public int TotalTracks { get; set; }
         public string ImageUrl { get; set; }
         public string YearStr { get; set; }
+        public string Url { get; set; }
     }
+
     public partial class Plugin
     {
         private MusicBeeApiInterface mbApiInterface;
         private PluginInfo about = new PluginInfo();
-        private DiscordRpc.RichPresence presence = new DiscordRpc.RichPresence();
+        
+        private DiscordRpcClient rpcClient = new DiscordRpcClient("519949979176140821");
 
-        private string APPLICATION_ID = "519949979176140821";
         private string imageSize = "medium"; // small, medium, large, extralarge, mega
 
         private static Dictionary<string, string> albumArtCache = new Dictionary<string, string>();
@@ -41,7 +46,6 @@ namespace MusicBeePlugin
         public Plugin.Configuration newConfig = new Plugin.Configuration();
 
         private LastFM_API FmApi = new LastFM_API("cba04ed41dff8bfb9c10835ee747ba94"); // LastFM Api key taken from MusicBee
-
         public PluginInfo Initialise(IntPtr apiInterfacePtr)
         {
             mbApiInterface = new MusicBeeApiInterface();
@@ -60,25 +64,14 @@ namespace MusicBeePlugin
             about.ReceiveNotifications = (ReceiveNotificationFlags.PlayerEvents | ReceiveNotificationFlags.TagEvents);
             about.ConfigurationPanelHeight = 48;   // height in pixels that musicbee should reserve in a panel for config settings. When set, a handle to an empty panel will be passed to the Configure function
 
-            InitialiseDiscord();
+            if (!rpcClient.IsInitialized)
+            {
+                rpcClient.Logger = new ConsoleLogger() { Level = LogLevel.Warning };
+                rpcClient.Initialize();
+            }
 
             return about;
         }
-
-        private void InitialiseDiscord()
-        {
-            var handlers = new DiscordRpc.EventHandlers();
-
-            handlers.readyCallback += HandleReadyCallback;
-            handlers.errorCallback += HandleErrorCallback;
-            handlers.disconnectedCallback += HandleDisconnectedCallback;
-
-            DiscordRpc.Initialize(APPLICATION_ID, ref handlers, true, null);
-        }
-
-        private void HandleReadyCallback(ref DiscordRpc.DiscordUser user) { }
-        private void HandleErrorCallback(int errorCode, string message) { }
-        private void HandleDisconnectedCallback(int errorCode, string message) { }
 
         private async Task FetchArt(string track, string artist, string albumArtist, string album)
         {
@@ -176,16 +169,22 @@ namespace MusicBeePlugin
 
         private void UpdatePresence(CurrentSongInfo SongInfo)
         {
-            presence.largeImageKey = "albumart";
+            RichPresence presence = new RichPresence();
+            presence.Assets = new Assets();
+            presence.Party = new Party();
+            presence.Timestamps = new Timestamps();
 
-            string yearStr   =   SongInfo.YearStr;
-            string album     =   SongInfo.Album;
-            string imageUrl  =   SongInfo.ImageUrl;
-            string track     =   SongInfo.Track;
-            string artist    =   SongInfo.Artist;
-            bool playing     =   SongInfo.Playing;
-            int index        =   SongInfo.Index;
-            int totalTracks  =   SongInfo.TotalTracks;
+            presence.Assets.LargeImageKey = "albumart";
+
+            string yearStr  = SongInfo.YearStr;
+            string album    = SongInfo.Album;
+            string imageUrl = SongInfo.ImageUrl;
+            string track    = SongInfo.Track;
+            string artist   = SongInfo.Artist;
+            string url      = SongInfo.Url;
+            bool playing    = SongInfo.Playing;
+            int index       = SongInfo.Index;
+            int totalTracks = SongInfo.TotalTracks;
 
             string year = null;
 
@@ -201,36 +200,31 @@ namespace MusicBeePlugin
                             year = result.Year.ToString();
             }
 
-            presence.largeImageText = $"{album}" + ( (year != null && config.showYear) ? $" ({year})" : "" );
+            presence.Assets.LargeImageText = $"{album}" + ( (year != null && config.showYear) ? $" ({year})" : "" );
 
             if (imageUrl != "" && imageUrl != "unknown")
-                presence.largeImageKey = imageUrl;
+                presence.Assets.LargeImageKey = imageUrl;
 
             string bitrate = mbApiInterface.NowPlaying_GetFileProperty(FilePropertyType.Bitrate);
             string codec = mbApiInterface.NowPlaying_GetFileProperty(Plugin.FilePropertyType.Kind);
 
-            // Discord RPC doesn't like strings that are only one character long
-            // NOTE(yui): unsure if this ^ was talking about the old interface or the discord client, leaving it in just in case
-            if (track.Length <= 1) track += " ";
-            if (artist.Length <= 1) artist += " ";
-
-            presence.state = $"by {artist}";
-            presence.details = $"{track} [{mbApiInterface.NowPlaying_GetFileProperty(FilePropertyType.Duration)}]";
+            presence.State = $"by {artist}";
+            presence.Details = $"{track} [{mbApiInterface.NowPlaying_GetFileProperty(FilePropertyType.Duration)}]";
 
             // Set the small image to the playback status.
             if (playing)
             {
-                presence.smallImageKey = "playing";
-                presence.smallImageText = $"{bitrate.Replace("k", "kbps")} [{codec}]";
+                presence.Assets.SmallImageKey = "playing";
+                presence.Assets.SmallImageText = $"{bitrate.Replace("k", "kbps")} [{codec}]";
             }
             else
             {
-                presence.smallImageKey = "paused";
-                presence.smallImageText = "Paused";
+                presence.Assets.SmallImageKey = "paused";
+                presence.Assets.SmallImageText = "Paused";
             }
 
-            presence.partySize = index;
-            presence.partyMax = totalTracks;
+            presence.Party.Size = index;
+            presence.Party.Max = totalTracks;
 
             long now = (long)DateTime.UtcNow.Subtract(new DateTime(1970, 1, 1)).TotalSeconds;
             long duration = this.mbApiInterface.NowPlaying_GetDuration() / 1000;
@@ -239,18 +233,25 @@ namespace MusicBeePlugin
             if (playing)
             {
                 long pos = (this.mbApiInterface.Player_GetPosition() / 1000);
-                presence.startTimestamp = now - pos;
+                presence.Timestamps.Start = new DateTime(1970, 1, 1).AddSeconds(now - pos);
 
                 if (duration != -1)
-                    presence.endTimestamp = end - pos;
-            }
-            else
-            {
-                presence.startTimestamp = 0;
-                presence.endTimestamp = 0;
+                    presence.Timestamps.End = new DateTime(1970, 1, 1).AddSeconds(end - pos);
+
+                if (url.StartsWith("http"))
+                {
+                    presence.Buttons = new DiscordRPC.Button[]
+                    {
+                        new DiscordRPC.Button()
+                        {
+                            Label = "Listen to stream",
+                            Url = url,
+                        }
+                    };
+                }
             }
 
-            DiscordRpc.UpdatePresence(presence);
+            rpcClient.SetPresence(presence);
         }
 
         public bool Configure(IntPtr panelHandle)
@@ -333,7 +334,8 @@ namespace MusicBeePlugin
         // MusicBee is closing the plugin (plugin is being disabled by user or MusicBee is shutting down)
         public void Close(PluginCloseReason reason)
         {
-            DiscordRpc.Shutdown();
+            rpcClient.ClearPresence();
+            rpcClient.Dispose();
         }
 
         // uninstall this plugin - clean up any persisted files
@@ -351,13 +353,14 @@ namespace MusicBeePlugin
             string trackTitle = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.TrackTitle);
             string album = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.Album);
             string year = mbApiInterface.NowPlaying_GetFileTag(MetaDataType.Year);
+            string url = mbApiInterface.NowPlaying_GetFileUrl();
             int position = mbApiInterface.Player_GetPosition();
 
             string originalArtist = artist;
 
             string[] tracks = null;
             mbApiInterface.NowPlayingList_QueryFilesEx(null, ref tracks);
-            int index = Array.IndexOf(tracks, mbApiInterface.NowPlaying_GetFileUrl());
+            int index = Array.IndexOf(tracks, url);
 
             // Check if there isn't an artist for the current song. If so, replace it with "(unknown artist)".
             if (string.IsNullOrEmpty(artist))
@@ -410,7 +413,8 @@ namespace MusicBeePlugin
                                 Index = index + 1,
                                 TotalTracks = tracks.Length,
                                 ImageUrl = imageUrl,
-                                YearStr = year
+                                YearStr = year,
+                                Url = url,
                             });
                         }
                         catch (Exception err)
